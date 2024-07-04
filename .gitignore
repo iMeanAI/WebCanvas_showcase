@@ -1,1 +1,7 @@
 online_results/*
+
+.vscode/
+
+**/__pycache__
+
+test_selector.py

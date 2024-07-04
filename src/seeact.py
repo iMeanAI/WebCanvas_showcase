@@ -41,6 +41,9 @@ from demo_utils.inference_engine import OpenaiEngine
 from demo_utils.ranking_model import CrossEncoder, find_topk
 from demo_utils.website_dict import website_dict
 
+
+from evaluate.utils import read_file, step_evaluate,extract_css_selector
+
 # Remove Huggingface internal warnings
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -54,6 +57,7 @@ class SessionControl:
     active_cdp_session = None
     context = None
     browser = None
+
 
 session_control = SessionControl()
 
@@ -147,7 +151,7 @@ async def main(config, base_dir) -> None:
     # openai settings
     openai_config = config["openai"]
     openai_config["api_key"] = os.getenv("OPENAI_API_KEY")
-    
+
     if openai_config["api_key"] == "Your API Key Here":
         raise Exception(
             f"Please set your GPT API key first. (in {os.path.join(base_dir, 'config', 'demo_mode.toml')} by default)")
@@ -180,8 +184,9 @@ async def main(config, base_dir) -> None:
                                      num_labels=1, max_length=512, )
 
     if not is_demo:
-        with open(f'{task_file_path}', 'r', encoding='utf-8') as file:
-            query_tasks = json.load(file)
+        # with open(f'{task_file_path}', 'r', encoding='utf-8') as file:
+        #     query_tasks = json.load(file)
+        query_tasks = read_file(file_path=task_file_path)
     else:
         query_tasks = []
         task_dict = {}
@@ -202,13 +207,13 @@ async def main(config, base_dir) -> None:
         query_tasks.append(task_dict)
 
     for single_query_task in query_tasks:
-        confirmed_task = single_query_task["confirmed_task"]
-        confirmed_website = single_query_task["website"]
+        confirmed_task, task_id, reference_task_length, reference_evaluate_steps = single_query_task
+        evaluate_steps = reference_evaluate_steps
+        init_website = "https://www.google.com/"
         try:
-            confirmed_website_url = website_dict[confirmed_website]
+            init_website_url = website_dict[init_website]
         except:
-            confirmed_website_url = confirmed_website
-        task_id = single_query_task["task_id"]
+            init_website_url = init_website
         main_result_path = os.path.join(save_file_dir, task_id)
 
         if not os.path.exists(main_result_path):
@@ -223,7 +228,8 @@ async def main(config, base_dir) -> None:
         # logger = await setup_logger(task_id, main_result_path)
         logger = logging.getLogger(f"{task_id}")
         logger.setLevel(logging.INFO)
-        log_fh = logging.FileHandler(os.path.join(main_result_path, f'{task_id}.log'), encoding='utf-8')
+        log_fh = logging.FileHandler(os.path.join(
+            main_result_path, f'{task_id}.log'), encoding='utf-8')
         log_fh.setLevel(logging.INFO)
         console_handler = logging.StreamHandler()
         console_handler.setLevel(logging.INFO)
@@ -234,7 +240,7 @@ async def main(config, base_dir) -> None:
         logger.addHandler(log_fh)
         logger.addHandler(console_handler)
 
-        logger.info(f"website: {confirmed_website_url}")
+        logger.info(f"website: {init_website_url}")
         logger.info(f"task: {confirmed_task}")
         logger.info(f"id: {task_id}")
         async with async_playwright() as playwright:
@@ -252,7 +258,7 @@ async def main(config, base_dir) -> None:
             session_control.context.on("page", page_on_open_handler)
             await session_control.context.new_page()
             try:
-                await session_control.active_page.goto(confirmed_website_url, wait_until="load")
+                await session_control.active_page.goto(init_website_url, wait_until="load")
             except Exception as e:
                 logger.info("Failed to fully load the webpage before timeout")
                 logger.info(e)
@@ -267,7 +273,8 @@ async def main(config, base_dir) -> None:
 
             while not complete_flag:
                 if dev_mode:
-                    logger.info(f"Page at the start: {session_control.active_page}")
+                    logger.info(
+                        f"Page at the start: {session_control.active_page}")
                 await session_control.active_page.bring_to_front()
                 terminal_width = 10
                 logger.info("=" * terminal_width)
@@ -303,7 +310,8 @@ async def main(config, base_dir) -> None:
                             taken_actions.append(human_intervention)
                             continue
 
-                    logger.info("Terminate because there is no element in this page.")
+                    logger.info(
+                        "Terminate because there is no element in this page.")
                     logger.info("Action History:")
                     for action in taken_actions:
                         logger.info(action)
@@ -313,11 +321,12 @@ async def main(config, base_dir) -> None:
                         await session_control.context.tracing.stop_chunk(
                             path=f"{os.path.join(main_result_path, 'playwright_traces', f'{time_step}.zip')}")
 
-                    logger.info(f"Write results to json file: {os.path.join(main_result_path, 'result.json')}")
+                    logger.info(
+                        f"Write results to json file: {os.path.join(main_result_path, 'result.json')}")
                     success_or_not = ""
                     if valid_op_count == 0:
                         success_or_not = "0"
-                    final_json = {"confirmed_task": confirmed_task, "website": confirmed_website,
+                    final_json = {"confirmed_task": confirmed_task, "website": init_website,
                                   "task_id": task_id, "success_or_not": success_or_not,
                                   "num_step": len(taken_actions), "action_history": taken_actions,
                                   "exit_by": "No elements"}
@@ -339,11 +348,13 @@ async def main(config, base_dir) -> None:
                     complete_flag = True
                     continue
                 if ranker_path and len(elements) > top_k:
-                    ranking_input = format_ranking_input(elements, confirmed_task, taken_actions)
+                    ranking_input = format_ranking_input(
+                        elements, confirmed_task, taken_actions)
                     logger.info("Start to rank")
                     pred_scores = ranking_model.predict(ranking_input, convert_to_numpy=True, show_progress_bar=False,
                                                         batch_size=100, )
-                    topk_values, topk_indices = find_topk(pred_scores, k=min(top_k, len(elements)))
+                    topk_values, topk_indices = find_topk(
+                        pred_scores, k=min(top_k, len(elements)))
                     all_candidate_ids = list(topk_indices)
                     ranked_elements = [elements[i] for i in all_candidate_ids]
                 else:
@@ -356,9 +367,11 @@ async def main(config, base_dir) -> None:
                     all_candidate_ids_with_location.append(
                         (element_id, round(element_detail[0][1]), round(element_detail[0][0])))
 
-                all_candidate_ids_with_location.sort(key=lambda x: (x[1], x[2]))
+                all_candidate_ids_with_location.sort(
+                    key=lambda x: (x[1], x[2]))
 
-                all_candidate_ids = [element_id[0] for element_id in all_candidate_ids_with_location]
+                all_candidate_ids = [element_id[0]
+                                     for element_id in all_candidate_ids_with_location]
                 num_choices = len(all_candidate_ids)
                 if ranker_path:
                     logger.info(f"# element candidates: {num_choices}")
@@ -403,12 +416,14 @@ async def main(config, base_dir) -> None:
 
                 for multichoice_i in range(0, num_choices, step_length):
                     logger.info("-" * 10)
-                    logger.info(f"Start Multi-Choice QA - Batch {multichoice_i // step_length}")
+                    logger.info(
+                        f"Start Multi-Choice QA - Batch {multichoice_i // step_length}")
                     input_image_path = os.path.join(main_result_path, 'image_inputs',
                                                     f'{time_step}_{multichoice_i // step_length}_crop.jpg')
 
                     height_start = all_candidate_ids_with_location[multichoice_i][1]
-                    height_end = all_candidate_ids_with_location[min(multichoice_i + step_length, num_choices) - 1][1]
+                    height_end = all_candidate_ids_with_location[min(
+                        multichoice_i + step_length, num_choices) - 1][1]
 
                     total_height = await session_control.active_page.evaluate('''() => {
                                                                     return Math.max(
@@ -417,9 +432,12 @@ async def main(config, base_dir) -> None:
                                                                         document.documentElement.clientHeight
                                                                     );
                                                                 }''')
-                    clip_start = min(total_height - 1144, max(0, height_start - 200))
-                    clip_height = min(total_height - clip_start, max(height_end - height_start + 200, 1144))
-                    clip = {"x": 0, "y": clip_start, "width": total_width, "height": clip_height}
+                    clip_start = min(total_height - 1144,
+                                     max(0, height_start - 200))
+                    clip_height = min(total_height - clip_start,
+                                      max(height_end - height_start + 200, 1144))
+                    clip = {"x": 0, "y": clip_start,
+                            "width": total_width, "height": clip_height}
 
                     if dev_mode:
                         logger.info(height_start)
@@ -431,7 +449,8 @@ async def main(config, base_dir) -> None:
                         await session_control.active_page.screenshot(path=input_image_path, clip=clip, full_page=True,
                                                                      type='jpeg', quality=100, timeout=20000)
                     except Exception as e_clip:
-                        logger.info(f"Failed to get cropped screenshot because {e_clip}")
+                        logger.info(
+                            f"Failed to get cropped screenshot because {e_clip}")
 
                     if dev_mode:
                         logger.info(multichoice_i)
@@ -440,7 +459,8 @@ async def main(config, base_dir) -> None:
                             logger.info("No screenshot")
                         continue
                     candidate_ids = all_candidate_ids[multichoice_i:multichoice_i + step_length]
-                    choices = format_choices(elements, candidate_ids, confirmed_task, taken_actions)
+                    choices = format_choices(
+                        elements, candidate_ids, confirmed_task, taken_actions)
                     query_count += 1
                     # Format prompts for LLM inference
                     prompt = generate_prompt(task=confirmed_task, previous=taken_actions, choices=choices,
@@ -449,7 +469,8 @@ async def main(config, base_dir) -> None:
                         for prompt_i in prompt:
                             logger.info(prompt_i)
 
-                    output0 = generation_model.generate(prompt=prompt, image_path=input_image_path, turn_number=0)
+                    output0 = generation_model.generate(
+                        prompt=prompt, image_path=input_image_path, turn_number=0)
 
                     terminal_width = 10
                     logger.info("-" * terminal_width)
@@ -481,7 +502,9 @@ async def main(config, base_dir) -> None:
                     for line in output.split('\n'):
                         logger.info(line)
                     # logger.info(output)
-                    pred_element, pred_action, pred_value = postprocess_action_lmm(output)
+
+                    pred_element, pred_action, pred_value = postprocess_action_lmm(
+                        output)
                     if len(pred_element) in [1, 2]:
                         element_id = get_index_from_option_name(pred_element)
                     else:
@@ -496,7 +519,8 @@ async def main(config, base_dir) -> None:
                         target_action = pred_action
                         target_value = pred_value
                         new_action += "[" + target_element[2] + "]" + " "
-                        new_action += target_element[1] + " -> " + target_action
+                        new_action += target_element[1] + \
+                            " -> " + target_action
                         if target_action.strip() in ["SELECT", "TYPE"]:
                             new_action += ": " + target_value
                         got_one_answer = True
@@ -543,11 +567,14 @@ async def main(config, base_dir) -> None:
 
                 try:
                     if monitor_signal == 'exit':
-                        raise Exception("human supervisor manually made it exit.")
+                        raise Exception(
+                            "human supervisor manually made it exit.")
                     if no_op_count >= max_continuous_no_op:
-                        raise Exception(f"no executable operations for {max_continuous_no_op} times.")
+                        raise Exception(
+                            f"no executable operations for {max_continuous_no_op} times.")
                     elif time_step >= max_op:
-                        raise Exception(f"the agent reached the step limit {max_op}.")
+                        raise Exception(
+                            f"the agent reached the step limit {max_op}.")
                     elif target_action == "TERMINATE":
                         raise Exception("The model determined a completion.")
 
@@ -573,6 +600,11 @@ async def main(config, base_dir) -> None:
                                     pass
 
                         if selector:
+                            selector_str = extract_css_selector(str(selector))
+                            element_value = ""
+                            evaluate_steps, match_result = await step_evaluate(page=session_control.active_page, evaluate_steps=evaluate_steps,
+                                                                               input_path=selector_str, element_value=element_value)
+
                             valid_op_count += 1
                             if target_action == "CLICK":
                                 js_click = True
@@ -586,23 +618,27 @@ async def main(config, base_dir) -> None:
                                 except Exception as e:
                                     try:
                                         if not js_click:
-                                            logger.info("Try performing a CLICK")
+                                            logger.info(
+                                                "Try performing a CLICK")
                                             await selector.evaluate("element => element.click()", timeout=10000)
                                         else:
                                             raise Exception(e)
                                     except Exception as ee:
                                         try:
-                                            logger.info("Try performing a HOVER")
+                                            logger.info(
+                                                "Try performing a HOVER")
                                             await selector.hover(timeout=10000)
                                             new_action = new_action.replace("CLICK",
                                                                             f"Failed to CLICK because {e}, did a HOVER instead")
                                         except Exception as eee:
-                                            new_action = new_action.replace("CLICK", f"Failed to CLICK because {e}")
+                                            new_action = new_action.replace(
+                                                "CLICK", f"Failed to CLICK because {e}")
                                             no_op_count += 1
                             elif target_action == "TYPE":
                                 try:
                                     try:
-                                        logger.info("Try performing a \"press_sequentially\"")
+                                        logger.info(
+                                            "Try performing a \"press_sequentially\"")
                                         await selector.clear(timeout=10000)
                                         await selector.fill("", timeout=10000)
                                         await selector.press_sequentially(target_value, timeout=10000)
@@ -611,7 +647,8 @@ async def main(config, base_dir) -> None:
                                 except Exception as e:
                                     try:
                                         if target_element[-1] in ["select"]:
-                                            logger.info("Try performing a SELECT")
+                                            logger.info(
+                                                "Try performing a SELECT")
                                             selected_value = await select_option(selector, target_value)
                                             new_action = new_action.replace("TYPE",
                                                                             f"Failed to TYPE \"{target_value}\" because {e}, did a SELECT {selected_value} instead")
@@ -621,49 +658,62 @@ async def main(config, base_dir) -> None:
                                         js_click = True
                                         try:
                                             if target_element[-1] in ["select", "input"]:
-                                                logger.info("Try performing a CLICK")
+                                                logger.info(
+                                                    "Try performing a CLICK")
                                                 await selector.evaluate("element => element.click()", timeout=10000)
                                                 js_click = False
                                             else:
-                                                logger.info("Try performing a CLICK")
+                                                logger.info(
+                                                    "Try performing a CLICK")
                                                 await selector.click(timeout=10000)
-                                            new_action = "[" + target_element[2] + "]" + " "
+                                            new_action = "[" + \
+                                                target_element[2] + "]" + " "
                                             new_action += target_element[
-                                                              1] + " -> " + f"Failed to TYPE \"{target_value}\" because {e}, did a CLICK instead"
+                                                1] + " -> " + f"Failed to TYPE \"{target_value}\" because {e}, did a CLICK instead"
                                         except Exception as eee:
                                             try:
                                                 if not js_click:
                                                     if dev_mode:
                                                         logger.info(eee)
-                                                    logger.info("Try performing a CLICK")
+                                                    logger.info(
+                                                        "Try performing a CLICK")
                                                     await selector.evaluate("element => element.click()", timeout=10000)
-                                                    new_action = "[" + target_element[2] + "]" + " "
+                                                    new_action = "[" + \
+                                                        target_element[2] + \
+                                                        "]" + " "
                                                     new_action += target_element[
-                                                                      1] + " -> " + f"Failed to TYPE \"{target_value}\" because {e}, did a CLICK instead"
+                                                        1] + " -> " + f"Failed to TYPE \"{target_value}\" because {e}, did a CLICK instead"
                                                 else:
                                                     raise Exception(eee)
                                             except Exception as eeee:
                                                 try:
-                                                    logger.info("Try performing a HOVER")
+                                                    logger.info(
+                                                        "Try performing a HOVER")
                                                     await selector.hover(timeout=10000)
-                                                    new_action = "[" + target_element[2] + "]" + " "
+                                                    new_action = "[" + \
+                                                        target_element[2] + \
+                                                        "]" + " "
                                                     new_action += target_element[
-                                                                      1] + " -> " + f"Failed to TYPE \"{target_value}\" because {e}, did a HOVER instead"
+                                                        1] + " -> " + f"Failed to TYPE \"{target_value}\" because {e}, did a HOVER instead"
                                                 except Exception as eee:
-                                                    new_action = "[" + target_element[2] + "]" + " "
+                                                    new_action = "[" + \
+                                                        target_element[2] + \
+                                                        "]" + " "
                                                     new_action += target_element[
-                                                                      1] + " -> " + f"Failed to TYPE \"{target_value}\" because {e}"
+                                                        1] + " -> " + f"Failed to TYPE \"{target_value}\" because {e}"
                                                     no_op_count += 1
                             elif target_action == "SELECT":
                                 try:
                                     logger.info("Try performing a SELECT")
                                     selected_value = await select_option(selector, target_value)
-                                    new_action = new_action.replace(f"{target_value}", f"{selected_value}")
+                                    new_action = new_action.replace(
+                                        f"{target_value}", f"{selected_value}")
                                 except Exception as e:
                                     try:
                                         if target_element[-1] in ["input"]:
                                             try:
-                                                logger.info("Try performing a \"press_sequentially\"")
+                                                logger.info(
+                                                    "Try performing a \"press_sequentially\"")
                                                 await selector.clear(timeout=10000)
                                                 await selector.fill("", timeout=10000)
                                                 await selector.press_sequentially(target_value, timeout=10000)
@@ -677,36 +727,46 @@ async def main(config, base_dir) -> None:
                                         js_click = True
                                         try:
                                             if target_element[-1] in ["select", "input"]:
-                                                logger.info("Try performing a CLICK")
+                                                logger.info(
+                                                    "Try performing a CLICK")
                                                 await selector.evaluate("element => element.click()", timeout=10000)
                                                 js_click = False
                                             else:
                                                 await selector.click(timeout=10000)
-                                            new_action = "[" + target_element[2] + "]" + " "
+                                            new_action = "[" + \
+                                                target_element[2] + "]" + " "
                                             new_action += target_element[
-                                                              1] + " -> " + f"Failed to SELECT \"{target_value}\" because {e}, did a CLICK instead"
+                                                1] + " -> " + f"Failed to SELECT \"{target_value}\" because {e}, did a CLICK instead"
                                         except Exception as eee:
 
                                             try:
                                                 if not js_click:
-                                                    logger.info("Try performing a CLICK")
+                                                    logger.info(
+                                                        "Try performing a CLICK")
                                                     await selector.evaluate("element => element.click()", timeout=10000)
-                                                    new_action = "[" + target_element[2] + "]" + " "
+                                                    new_action = "[" + \
+                                                        target_element[2] + \
+                                                        "]" + " "
                                                     new_action += target_element[
-                                                                      1] + " -> " + f"Failed to SELECT \"{target_value}\" because {e}, did a CLICK instead"
+                                                        1] + " -> " + f"Failed to SELECT \"{target_value}\" because {e}, did a CLICK instead"
                                                 else:
                                                     raise Exception(eee)
                                             except Exception as eeee:
                                                 try:
-                                                    logger.info("Try performing a HOVER")
+                                                    logger.info(
+                                                        "Try performing a HOVER")
                                                     await selector.hover(timeout=10000)
-                                                    new_action = "[" + target_element[2] + "]" + " "
+                                                    new_action = "[" + \
+                                                        target_element[2] + \
+                                                        "]" + " "
                                                     new_action += target_element[
-                                                                      1] + " -> " + f"Failed to SELECT \"{target_value}\" because {e}, did a HOVER instead"
+                                                        1] + " -> " + f"Failed to SELECT \"{target_value}\" because {e}, did a HOVER instead"
                                                 except Exception as eee:
-                                                    new_action = "[" + target_element[2] + "]" + " "
+                                                    new_action = "[" + \
+                                                        target_element[2] + \
+                                                        "]" + " "
                                                     new_action += target_element[
-                                                                      1] + " -> " + f"Failed to SELECT \"{target_value}\" because {e}"
+                                                        1] + " -> " + f"Failed to SELECT \"{target_value}\" because {e}"
                                                     no_op_count += 1
                             elif target_action == "HOVER":
                                 try:
@@ -721,28 +781,35 @@ async def main(config, base_dir) -> None:
                                         js_click = True
                                         try:
                                             if target_element[-1] in ["select", "input"]:
-                                                logger.info("Try performing a CLICK")
+                                                logger.info(
+                                                    "Try performing a CLICK")
                                                 await selector.evaluate("element => element.click()", timeout=10000)
                                                 js_click = False
                                             else:
                                                 await selector.click(timeout=10000)
-                                            new_action = "[" + target_element[2] + "]" + " "
+                                            new_action = "[" + \
+                                                target_element[2] + "]" + " "
                                             new_action += target_element[
-                                                              1] + " -> " + f"Failed to HOVER because {e}, did a CLICK instead"
+                                                1] + " -> " + f"Failed to HOVER because {e}, did a CLICK instead"
                                         except Exception as eee:
                                             try:
                                                 if not js_click:
-                                                    logger.info("Try performing a CLICK")
+                                                    logger.info(
+                                                        "Try performing a CLICK")
                                                     await selector.evaluate("element => element.click()", timeout=10000)
-                                                    new_action = "[" + target_element[2] + "]" + " "
+                                                    new_action = "[" + \
+                                                        target_element[2] + \
+                                                        "]" + " "
                                                     new_action += target_element[
-                                                                      1] + " -> " + f"Failed to HOVER because {e}, did a CLICK instead"
+                                                        1] + " -> " + f"Failed to HOVER because {e}, did a CLICK instead"
                                                 else:
                                                     raise Exception(eee)
                                             except Exception as eeee:
-                                                new_action = "[" + target_element[2] + "]" + " "
+                                                new_action = "[" + \
+                                                    target_element[2] + \
+                                                    "]" + " "
                                                 new_action += target_element[
-                                                                  1] + " -> " + f"Failed to HOVER because {e}"
+                                                    1] + " -> " + f"Failed to HOVER because {e}"
                                                 no_op_count += 1
                             elif target_action == "PRESS ENTER":
                                 try:
@@ -760,7 +827,8 @@ async def main(config, base_dir) -> None:
                             raise Exception(
                                 f"the human supervisor rejected this operation and may have taken some actions.{human_intervention}")
                         elif monitor_signal == "reject":
-                            raise Exception("the human supervisor rejected this operation.")
+                            raise Exception(
+                                "the human supervisor rejected this operation.")
                         elif target_element == "PRESS ENTER":
                             logger.info("Try performing a PRESS ENTER")
                             await session_control.active_page.keyboard.press('Enter')
@@ -786,7 +854,7 @@ async def main(config, base_dir) -> None:
                     if not session_control.context.pages:
                         await session_control.context.new_page()
                         try:
-                            await session_control.active_page.goto(confirmed_website_url, wait_until="load")
+                            await session_control.active_page.goto(init_website_url, wait_until="load")
                         except Exception as e:
                             pass
 
@@ -795,7 +863,8 @@ async def main(config, base_dir) -> None:
                     else:
                         await asyncio.sleep(3)
                     if dev_mode:
-                        logger.info(f"current active page: {session_control.active_page}")
+                        logger.info(
+                            f"current active page: {session_control.active_page}")
 
                         # await session_control.context.new_page()
                         # try:
@@ -831,8 +900,9 @@ async def main(config, base_dir) -> None:
                     success_or_not = ""
                     if valid_op_count == 0:
                         success_or_not = "0"
-                    logger.info(f"Write results to json file: {os.path.join(main_result_path, 'result.json')}")
-                    final_json = {"confirmed_task": confirmed_task, "website": confirmed_website,
+                    logger.info(
+                        f"Write results to json file: {os.path.join(main_result_path, 'result.json')}")
+                    final_json = {"confirmed_task": confirmed_task, "website": init_website,
                                   "task_id": task_id, "success_or_not": success_or_not,
                                   "num_step": len(taken_actions), "action_history": taken_actions, "exit_by": str(e)}
 
@@ -840,7 +910,8 @@ async def main(config, base_dir) -> None:
                         json.dump(final_json, file, indent=4)
 
                     if monitor:
-                        logger.info("Wait for human inspection. Directly press Enter to exit")
+                        logger.info(
+                            "Wait for human inspection. Directly press Enter to exit")
                         monitor_input = await ainput()
 
                     logger.info("Close browser context")
@@ -867,7 +938,8 @@ if __name__ == "__main__":
         with open(os.path.join(base_dir, args.config_path) if not os.path.isabs(args.config_path) else args.config_path,
                   'r') as toml_config_file:
             config = toml.load(toml_config_file)
-            print(f"Configuration File Loaded - {os.path.join(base_dir, args.config_path)}")
+            print(
+                f"Configuration File Loaded - {os.path.join(base_dir, args.config_path)}")
     except FileNotFoundError:
         print(f"Error: File '{args.config_path}' not found.")
     except toml.TomlDecodeError:
