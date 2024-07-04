@@ -55,20 +55,7 @@ class SessionControl:
     context = None
     browser = None
 
-
 session_control = SessionControl()
-
-
-#
-# async def init_cdp_session(page):
-#     cdp_session = await page.context.new_cdp_session(page)
-#     await cdp_session.send("DOM.enable")
-#     await cdp_session.send("Overlay.enable")
-#     await cdp_session.send("Accessibility.enable")
-#     await cdp_session.send("Page.enable")
-#     await cdp_session.send("Emulation.setFocusEmulationEnabled", {"enabled": True})
-#     return cdp_session
-
 
 async def page_on_close_handler(page):
     # print("Closed: ", page)
@@ -159,6 +146,8 @@ async def main(config, base_dir) -> None:
 
     # openai settings
     openai_config = config["openai"]
+    openai_config["api_key"] = os.getenv("OPENAI_API_KEY")
+    
     if openai_config["api_key"] == "Your API Key Here":
         raise Exception(
             f"Please set your GPT API key first. (in {os.path.join(base_dir, 'config', 'demo_mode.toml')} by default)")
