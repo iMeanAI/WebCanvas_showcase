@@ -42,7 +42,8 @@ from demo_utils.ranking_model import CrossEncoder, find_topk
 from demo_utils.website_dict import website_dict
 
 
-from evaluate.utils import read_file, step_evaluate,extract_css_selector
+from evaluate.utils import read_file, evaluate_with_webcanvas,extract_css_selector,extract_element_value,step_evaluate
+
 
 # Remove Huggingface internal warnings
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -60,6 +61,7 @@ class SessionControl:
 
 
 session_control = SessionControl()
+
 
 async def page_on_close_handler(page):
     # print("Closed: ", page)
@@ -206,7 +208,12 @@ async def main(config, base_dir) -> None:
         task_dict["task_id"] = file_name
         query_tasks.append(task_dict)
 
-    for single_query_task in query_tasks:
+    index = 0
+    
+    for task_index,single_query_task in enumerate(query_tasks):
+        if index > 9:
+            break
+        index += 1
         confirmed_task, task_id, reference_task_length, reference_evaluate_steps = single_query_task
         evaluate_steps = reference_evaluate_steps
         init_website = "https://www.google.com/"
@@ -271,6 +278,9 @@ async def main(config, base_dir) -> None:
             no_op_count = 0
             valid_op_count = 0
 
+            step_score_list = []
+            match_result_list = []
+
             while not complete_flag:
                 if dev_mode:
                     logger.info(
@@ -290,6 +300,7 @@ async def main(config, base_dir) -> None:
                     for i in elements:
                         logger.info(i[1:])
                 time_step += 1
+                
 
                 if len(elements) == 0:
                     if monitor:
@@ -326,10 +337,11 @@ async def main(config, base_dir) -> None:
                     success_or_not = ""
                     if valid_op_count == 0:
                         success_or_not = "0"
-                    final_json = {"confirmed_task": confirmed_task, "website": init_website,
+
+                    final_json = {"task_index":task_index,"confirmed_task": confirmed_task, "website": init_website,
                                   "task_id": task_id, "success_or_not": success_or_not,
-                                  "num_step": len(taken_actions), "action_history": taken_actions,
-                                  "exit_by": "No elements"}
+                                  "step_score": step_score_list, "match_result": match_result_list,
+                                  "num_step": len(taken_actions), "action_history": taken_actions, "exit_by": str(e),"evaluation":reference_evaluate_steps}
 
                     with open(os.path.join(main_result_path, 'result.json'), 'w', encoding='utf-8') as file:
                         json.dump(final_json, file, indent=4)
@@ -600,10 +612,31 @@ async def main(config, base_dir) -> None:
                                     pass
 
                         if selector:
-                            selector_str = extract_css_selector(str(selector))
-                            element_value = ""
-                            evaluate_steps, match_result = await step_evaluate(page=session_control.active_page, evaluate_steps=evaluate_steps,
-                                                                               input_path=selector_str, element_value=element_value)
+
+                            # selector_str = extract_css_selector(str(selector))
+                            # element_value = ""
+                            # if target_value:
+                            #     element_value = target_value
+                            # else:
+                            #     html_content = await session_control.active_page.content()
+                            #     element_value = extract_element_value(
+                            #         html_content, selector_str)
+                            # evaluate_steps, match_result = await step_evaluate(page=session_control.active_page, evaluate_steps=evaluate_steps,
+                            #                                                 input_path=selector_str, element_value=element_value)
+                            # total_step_score = 0
+                            # for evaluate in evaluate_steps:
+                            #     total_step_score += evaluate["score"]
+                            # step_score = str(
+                            #     total_step_score) + " / " + str(len(reference_evaluate_steps))
+
+                            evaluate_steps, step_score, match_result = await evaluate_with_webcanvas(page=session_control.active_page,selector=selector,target_value=target_value,evaluate_steps=evaluate_steps,reference_evaluate_steps=reference_evaluate_steps)
+                            
+                            logger.info("🤖evaluate with webcanvas🤖")
+                            logger.info(f"Step score: {step_score}" )
+                            logger.info(f"Match result: {match_result}")
+
+                            step_score_list.append(step_score)
+                            match_result_list.append(str(match_result))
 
                             valid_op_count += 1
                             if target_action == "CLICK":
@@ -902,9 +935,10 @@ async def main(config, base_dir) -> None:
                         success_or_not = "0"
                     logger.info(
                         f"Write results to json file: {os.path.join(main_result_path, 'result.json')}")
-                    final_json = {"confirmed_task": confirmed_task, "website": init_website,
+                    final_json = {"task_index":task_index,"confirmed_task": confirmed_task, "website": init_website,
                                   "task_id": task_id, "success_or_not": success_or_not,
-                                  "num_step": len(taken_actions), "action_history": taken_actions, "exit_by": str(e)}
+                                  "step_score": step_score_list, "match_result": match_result_list,
+                                  "num_step": len(taken_actions), "action_history": taken_actions, "exit_by": str(e),"evaluation":reference_evaluate_steps}
 
                     with open(os.path.join(main_result_path, 'result.json'), 'w', encoding='utf-8') as file:
                         json.dump(final_json, file, indent=4)

@@ -5,3 +5,8 @@ online_results/*
 **/__pycache__
 
 test_selector.py
+
+webcanvas_results/*
+
+
+data/webcanvas_tasks/*

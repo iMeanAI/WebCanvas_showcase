@@ -201,3 +201,31 @@ def extract_css_selector(selector_str):
         return element_type + ":nth-of-type(" + nth_value + ")"
     else:
         return None
+
+
+def extract_element_value(html_content, selector):
+    soup = BeautifulSoup(html_content, 'html.parser')
+    element = soup.select_one(selector)
+    element_value = ""
+    if element:
+        element_value = element.text
+    return element_value
+
+
+async def evaluate_with_webcanvas(page, selector, target_value, evaluate_steps, reference_evaluate_steps):
+    selector_str = extract_css_selector(str(selector))
+    element_value = ""
+    if target_value:
+        element_value = target_value
+    else:
+        html_content = await page.content()
+        element_value = extract_element_value(
+            html_content, selector_str)
+    evaluate_steps, match_result = await step_evaluate(page=page, evaluate_steps=evaluate_steps,
+                                                       input_path=selector_str, element_value=element_value)
+    total_step_score = 0
+    for evaluate in evaluate_steps:
+        total_step_score += evaluate["score"]
+    step_score_rate = str(
+        total_step_score) + " / " + str(len(reference_evaluate_steps))
+    return evaluate_steps, step_score_rate, match_result
