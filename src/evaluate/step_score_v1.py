@@ -29,9 +29,8 @@ class StepEvaluator():
 
 
 class URLEvaluator(StepEvaluator):
-
     '''URL Evaluation Scoring'''
-    @ staticmethod
+    @staticmethod
     def url_exact_match(input_url, reference_answer, key=False):
         if key:
             try:
@@ -49,7 +48,7 @@ class URLEvaluator(StepEvaluator):
         #     print("url_exactly_match:", input_answer)
         return result_score
 
-    @ staticmethod
+    @staticmethod
     def url_include_match(input_url, reference_answer, key=None):
         # print(input_url, reference_answer)
         if key:
@@ -73,7 +72,7 @@ class URLEvaluator(StepEvaluator):
         # print("score:", result_score, input_answer)
         return result_score
 
-    @ staticmethod
+    @staticmethod
     async def url_semantic_match(input_url, semantic_method, key=False):
         if key:
             try:
@@ -91,16 +90,8 @@ class URLEvaluator(StepEvaluator):
 
 class ElementEvaluator(StepEvaluator):
     '''Element evaluation and scoring'''
-
     @staticmethod
-    async def is_same_element(page, input_element_handle, reference_element_handle):
-        is_same_element = await page.evaluate(
-            "(elements) => elements[0] === elements[1]",
-            [input_element_handle, reference_element_handle])
-        return int(is_same_element)
-
-    @ staticmethod
-    async def path_exact_match(input_answer, reference_answer, method, page, input_netloc, reference_netloc):
+    def path_exact_match(input_answer, reference_answer, method, html_content, input_netloc, reference_netloc):
         score = 0
         if method == "xpath":
             if reference_netloc != input_netloc:
@@ -108,7 +99,6 @@ class ElementEvaluator(StepEvaluator):
                 #       "input_netloc:", input_netloc)
                 return 0
             try:
-                html_content = await page.content()
                 tree = html.fromstring(html_content)
                 input_elements = tree.xpath(input_answer)
                 reference_elements = tree.xpath(reference_answer)
@@ -123,37 +113,39 @@ class ElementEvaluator(StepEvaluator):
                         while trace_up_count < 3 and score == 0:
                             trace_up_count += 1
                             current_element = current_element.getparent()
-                            parent_score = input_elements[0] is current_element
-                            score = max(score, parent_score)
+                            score_parent = input_elements[0] is current_element
+                            score = max(score, score_parent)
                 except:
                     pass
             else:
                 score = 0
         elif method == "selector":
             if reference_netloc != input_netloc:
+                # print("reference_netloc:", reference_netloc,
+                #       "input_netloc:", input_netloc)
                 return 0
             try:
-                input_element = input_answer
-                reference_element = page.locator(reference_answer)
-                input_element_handle = await input_element.element_handle()
-                reference_element_handle = await reference_element.element_handle()
+                soup = BeautifulSoup(html_content, 'html.parser')
+                input_element = soup.select_one(input_answer)
+                reference_element = soup.select_one(reference_answer)
+                print("input_answer",input_element)
+                print("reference_element",reference_element)
                 if (input_element is not None) and (reference_element is not None):
-                    score = await ElementEvaluator().is_same_element(page, input_element_handle=input_element_handle, reference_element_handle=reference_element_handle)
+                    score = input_element is reference_element
+
                     try:
-                        reference_tag = await page.evaluate("(element) => element.tagName.toLowerCase()", reference_element_handle)
-                        if reference_tag in MapTagNameList:
+                        if reference_element.name in MapTagNameList:
+                            # parent_elements = reference_element.parent
+                            # score_parent = input_element is parent_elements
+                            # score = max(score, score_parent)
                             trace_up_count = 0
                             current_element = reference_element
                             while trace_up_count < 3 and score == 0:
                                 trace_up_count += 1
-                                parent_element = current_element.locator("xpath=..")
-                                parent_element_handle = await parent_element.element_handle()
-                                current_element = parent_element
-                                if parent_element:
-                                    parent_score = await ElementEvaluator().is_same_element(page, input_element_handle=input_element_handle, reference_element_handle=parent_element_handle)
-                                    score = max(score, parent_score)
-                    except Exception as e:
-                        print(e)
+                                current_element = current_element.parent
+                                score_parent = input_element is current_element
+                                score = max(score, score_parent)
+                    except:
                         pass
             except:
                 score = 0
@@ -161,14 +153,14 @@ class ElementEvaluator(StepEvaluator):
         #     input_answer, reference_answer)
         return score
 
-    @ staticmethod
+    @staticmethod
     def path_included_match(input_answer, reference_answer, method, html_content):
         # TODO Add path inclusion matching method
         result_score = MatchFunction.include_match(
             input_answer, reference_answer)
         return result_score
 
-    @ staticmethod
+    @staticmethod
     def element_value_exact_match(input_answer, reference_answer, input_netloc, reference_netloc):
         if reference_netloc != input_netloc:
             # print("reference_netloc:", reference_netloc,
@@ -178,7 +170,7 @@ class ElementEvaluator(StepEvaluator):
             input_answer, reference_answer)
         return result_score
 
-    @ staticmethod
+    @staticmethod
     def element_value_include_match(input_answer, reference_answer, input_netloc, reference_netloc):
         if reference_netloc != input_netloc:
             # print("reference_netloc:", reference_netloc,
@@ -188,7 +180,7 @@ class ElementEvaluator(StepEvaluator):
             input_answer, reference_answer)
         return result_score
 
-    @ staticmethod
+    @staticmethod
     async def element_value_semantic_match(input_answer, semantic_method, input_netloc, reference_netloc=0):
         if reference_netloc != input_netloc:
             # print("reference_netloc:", reference_netloc,
@@ -202,19 +194,19 @@ class ElementEvaluator(StepEvaluator):
 
 class TextEvaluator(StepEvaluator):
     '''Text evaluation and scoring'''
-    @ staticmethod
+    @staticmethod
     def text_exact_match(input_answer, reference_answer):
         result_score = MatchFunction.exact_match(
             input_answer, reference_answer)
         return result_score
 
-    @ staticmethod
+    @staticmethod
     def text_included_match(input_answer, reference_answer):
         result_score = MatchFunction.include_match(
             input_answer, reference_answer)
         return result_score
 
-    @ staticmethod
+    @staticmethod
     def text_semantic_match(input_answer, semantic_method):
         result_score = MatchFunction.semantic_match(
             input_answer, semantic_method, semantic_method)
@@ -225,15 +217,15 @@ class MatchFunction():
     def __init__(self):
         pass
 
-    @ staticmethod
+    @staticmethod
     def exact_match(input_answer, reference_answer) -> int:
         return 1 if input_answer == reference_answer else 0
 
-    @ staticmethod
+    @staticmethod
     def include_match(input_answer, reference_answer) -> int:
         return 1 if reference_answer in input_answer else 0
 
-    @ staticmethod
+    @staticmethod
     async def semantic_match(input_answer, semantic_method) -> float:
         GPT35 = GPTGenerator35()
         semantic_request = SemanticMatchPromptConstructor(

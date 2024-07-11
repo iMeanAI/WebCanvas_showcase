@@ -5,8 +5,13 @@ online_results/*
 **/__pycache__
 
 test_selector.py
+test.py
 
-webcanvas_results/*
+
 
 
 data/webcanvas_tasks/*
+!data/webcanvas_tasks/example_130.json
+
+webcanvas_results/*
+webcanvas_results_example_130/

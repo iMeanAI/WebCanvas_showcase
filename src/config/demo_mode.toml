@@ -1,11 +1,11 @@
 [basic]
 is_demo = false # Set to true for demo mode, prompting user input for tasks and URLs. False reads tasks from a JSON file.
-save_file_dir = "../webcanvas_results" # Directory to save the results of the program's operations.
+save_file_dir = "../webcanvas_results_example_130" # Directory to save the results of the program's operations.
 default_task ="Find pdf of paper \"GPT-4V(ision) is a Generalist Web Agent, if Grounded\" from arXiv" # Default task to perform.
 default_website = "https://www.google.com/" # Default website to start the task.
 
 [experiment]
-task_file_path = "../data/webcanvas_tasks/mind2web-test_104tasks_20240528.json" # Path to the JSON file with tasks (ignored if is_demo is true).
+task_file_path = "../data/webcanvas_tasks/example_130.json" # Path to the JSON file with tasks (ignored if is_demo is true).
 overwrite = false # Enable to overwrite existing results. Disable to skip tasks already saved in save_file_dir.
 top_k = 50  # Number of top element candidates to consider if a ranker is used.
 fixed_choice_batch_size = 17 # Fixed number of options for each multiple-choice question.

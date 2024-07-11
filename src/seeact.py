@@ -42,7 +42,7 @@ from demo_utils.ranking_model import CrossEncoder, find_topk
 from demo_utils.website_dict import website_dict
 
 
-from evaluate.utils import read_file, evaluate_with_webcanvas,extract_css_selector,extract_element_value,step_evaluate
+from evaluate.utils import read_file, evaluate_with_webcanvas
 
 
 # Remove Huggingface internal warnings
@@ -64,18 +64,12 @@ session_control = SessionControl()
 
 
 async def page_on_close_handler(page):
-    # print("Closed: ", page)
     if session_control.context:
         # if True:
         try:
             await session_control.active_page.title()
-            # print("Current active page: ", session_control.active_page)
         except:
             await aprint("The active tab was closed. Will switch to the last page (or open a new default google page)")
-            # print("All pages:")
-            # print('-' * 10)
-            # print(session_control.context.pages)
-            # print('-' * 10)
             if session_control.context.pages:
                 session_control.active_page = session_control.context.pages[-1]
                 await session_control.active_page.bring_to_front()
@@ -102,17 +96,11 @@ async def page_on_crash_handler(page):
 
 
 async def page_on_open_handler(page):
-    # print("Opened: ",page)
+
     page.on("framenavigated", page_on_navigatio_handler)
     page.on("close", page_on_close_handler)
     page.on("crash", page_on_crash_handler)
     session_control.active_page = page
-    # print("The active tab is set to: ", page.url)
-    # print("All pages:")
-    # print('-'*10)
-    # print(session_control.context.pages)
-    # print("active page: ",session_control.active_page)
-    # print('-' * 10)
 
 
 async def main(config, base_dir) -> None:
@@ -209,14 +197,18 @@ async def main(config, base_dir) -> None:
         query_tasks.append(task_dict)
 
     index = 0
-    
-    for task_index,single_query_task in enumerate(query_tasks):
-        if index > 9:
-            break
-        index += 1
+
+    # for task_index,single_query_task in enumerate(query_tasks):
+    for i in range(88, 89):
+        # if index > 9:
+        #     break
+        # index += 1
+        single_query_task = query_tasks[i]
+        task_index = i
         confirmed_task, task_id, reference_task_length, reference_evaluate_steps = single_query_task
         evaluate_steps = reference_evaluate_steps
-        init_website = "https://www.google.com/"
+        # init_website = "https://www.google.com/"
+        init_website = "https://sports.yahoo.com/nba/teams/denver/"
         try:
             init_website_url = website_dict[init_website]
         except:
@@ -276,6 +268,7 @@ async def main(config, base_dir) -> None:
             monitor_signal = ""
             time_step = 0
             no_op_count = 0
+            task_finished = False
             valid_op_count = 0
 
             step_score_list = []
@@ -300,7 +293,6 @@ async def main(config, base_dir) -> None:
                     for i in elements:
                         logger.info(i[1:])
                 time_step += 1
-                
 
                 if len(elements) == 0:
                     if monitor:
@@ -338,10 +330,10 @@ async def main(config, base_dir) -> None:
                     if valid_op_count == 0:
                         success_or_not = "0"
 
-                    final_json = {"task_index":task_index,"confirmed_task": confirmed_task, "website": init_website,
+                    final_json = {"task_index": task_index, "confirmed_task": confirmed_task, "website": init_website,
                                   "task_id": task_id, "success_or_not": success_or_not,
                                   "step_score": step_score_list, "match_result": match_result_list,
-                                  "num_step": len(taken_actions), "action_history": taken_actions, "exit_by": str(e),"evaluation":reference_evaluate_steps}
+                                  "num_step": len(taken_actions), "action_history": taken_actions, "exit_by": str(e), "evaluation": reference_evaluate_steps}
 
                     with open(os.path.join(main_result_path, 'result.json'), 'w', encoding='utf-8') as file:
                         json.dump(final_json, file, indent=4)
@@ -581,7 +573,10 @@ async def main(config, base_dir) -> None:
                     if monitor_signal == 'exit':
                         raise Exception(
                             "human supervisor manually made it exit.")
-                    if no_op_count >= max_continuous_no_op:
+                    if task_finished:
+                        raise Exception(
+                            "The agent completely hits the key nodes during execution, so the task is considered completed.")
+                    elif no_op_count >= max_continuous_no_op:
                         raise Exception(
                             f"no executable operations for {max_continuous_no_op} times.")
                     elif time_step >= max_op:
@@ -590,9 +585,6 @@ async def main(config, base_dir) -> None:
                     elif target_action == "TERMINATE":
                         raise Exception("The model determined a completion.")
 
-                    # Perform browser action with PlayWright
-                    # The code is complex to handle all kinds of cases in execution
-                    # It's ugly, but it works, so far
                     selector = None
                     fail_to_execute = False
                     try:
@@ -613,27 +605,13 @@ async def main(config, base_dir) -> None:
 
                         if selector:
 
-                            # selector_str = extract_css_selector(str(selector))
-                            # element_value = ""
-                            # if target_value:
-                            #     element_value = target_value
-                            # else:
-                            #     html_content = await session_control.active_page.content()
-                            #     element_value = extract_element_value(
-                            #         html_content, selector_str)
-                            # evaluate_steps, match_result = await step_evaluate(page=session_control.active_page, evaluate_steps=evaluate_steps,
-                            #                                                 input_path=selector_str, element_value=element_value)
-                            # total_step_score = 0
-                            # for evaluate in evaluate_steps:
-                            #     total_step_score += evaluate["score"]
-                            # step_score = str(
-                            #     total_step_score) + " / " + str(len(reference_evaluate_steps))
+                            evaluate_steps, step_score, match_result, task_finished = await evaluate_with_webcanvas(page=session_control.active_page, selector=selector, target_value=target_value, evaluate_steps=evaluate_steps, reference_evaluate_steps=reference_evaluate_steps)
 
-                            evaluate_steps, step_score, match_result = await evaluate_with_webcanvas(page=session_control.active_page,selector=selector,target_value=target_value,evaluate_steps=evaluate_steps,reference_evaluate_steps=reference_evaluate_steps)
-                            
                             logger.info("🤖evaluate with webcanvas🤖")
-                            logger.info(f"Step score: {step_score}" )
+                            logger.info(f"selector: {str(selector)}")
+                            logger.info(f"Step score: {step_score}")
                             logger.info(f"Match result: {match_result}")
+                            logger.info(f"Task Finished ? : {task_finished}")
 
                             step_score_list.append(step_score)
                             match_result_list.append(str(match_result))
@@ -935,10 +913,10 @@ async def main(config, base_dir) -> None:
                         success_or_not = "0"
                     logger.info(
                         f"Write results to json file: {os.path.join(main_result_path, 'result.json')}")
-                    final_json = {"task_index":task_index,"confirmed_task": confirmed_task, "website": init_website,
+                    final_json = {"task_index": task_index, "confirmed_task": confirmed_task, "website": init_website,
                                   "task_id": task_id, "success_or_not": success_or_not,
                                   "step_score": step_score_list, "match_result": match_result_list,
-                                  "num_step": len(taken_actions), "action_history": taken_actions, "exit_by": str(e),"evaluation":reference_evaluate_steps}
+                                  "num_step": len(taken_actions), "action_history": taken_actions, "exit_by": str(e), "evaluation": reference_evaluate_steps}
 
                     with open(os.path.join(main_result_path, 'result.json'), 'w', encoding='utf-8') as file:
                         json.dump(final_json, file, indent=4)
