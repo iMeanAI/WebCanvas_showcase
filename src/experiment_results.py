@@ -102,4 +102,4 @@ def get_evaluate_result(input_result_path):
     evaluate(file_path=out_file_path)
 
 
-get_evaluate_result("../webcanvas_results")
+get_evaluate_result("../webcanvas_results_example_130")

@@ -315,7 +315,7 @@ def extract_element_value(html_content, selector):
 
 async def evaluate_with_webcanvas(page, selector, target_value, evaluate_steps, reference_evaluate_steps):
     element_value = ""
-    if target_value:
+    if target_value != "None":
         element_value = target_value
     else:
         element_value = await selector.text_content()

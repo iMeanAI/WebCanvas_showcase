@@ -195,25 +195,21 @@ async def main(config, base_dir) -> None:
         file_name = current_time.strftime("%Y-%m-%d_%H-%M-%S")
         task_dict["task_id"] = file_name
         query_tasks.append(task_dict)
-
     index = 0
-
-    # for task_index,single_query_task in enumerate(query_tasks):
-    for i in range(88, 89):
-        # if index > 9:
-        #     break
-        # index += 1
-        single_query_task = query_tasks[i]
-        task_index = i
+    for task_index, single_query_task in enumerate(query_tasks):
+        index += 1
+        if index > 10:
+            break
         confirmed_task, task_id, reference_task_length, reference_evaluate_steps = single_query_task
         evaluate_steps = reference_evaluate_steps
-        # init_website = "https://www.google.com/"
-        init_website = "https://sports.yahoo.com/nba/teams/denver/"
+        init_website = "https://www.google.com/"
+
         try:
             init_website_url = website_dict[init_website]
         except:
             init_website_url = init_website
-        main_result_path = os.path.join(save_file_dir, task_id)
+        main_result_path = os.path.join(
+            save_file_dir, f"{task_index}_{task_id}")
 
         if not os.path.exists(main_result_path):
             os.makedirs(main_result_path)
@@ -329,7 +325,7 @@ async def main(config, base_dir) -> None:
                     success_or_not = ""
                     if valid_op_count == 0:
                         success_or_not = "0"
-
+                    e = "Terminate because there is no element in this page."
                     final_json = {"task_index": task_index, "confirmed_task": confirmed_task, "website": init_website,
                                   "task_id": task_id, "success_or_not": success_or_not,
                                   "step_score": step_score_list, "match_result": match_result_list,
@@ -604,7 +600,7 @@ async def main(config, base_dir) -> None:
                                     pass
 
                         if selector:
-
+     
                             evaluate_steps, step_score, match_result, task_finished = await evaluate_with_webcanvas(page=session_control.active_page, selector=selector, target_value=target_value, evaluate_steps=evaluate_steps, reference_evaluate_steps=reference_evaluate_steps)
 
                             logger.info("🤖evaluate with webcanvas🤖")
