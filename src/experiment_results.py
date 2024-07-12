@@ -4,11 +4,12 @@ import json5
 import json
 import re
 import os
+import argparse
+import toml
 
 
 def merge_all_result(input_path):
     all_task_id = os.listdir(input_path)
-    print(all_task_id)
     all_task_path = [item for item in all_task_id if os.path.isdir(
         os.path.join(input_path, item))]
     out_file_path = input_path + "/result"
@@ -102,4 +103,26 @@ def get_evaluate_result(input_result_path):
     evaluate(file_path=out_file_path)
 
 
-get_evaluate_result("../webcanvas_results_example_130")
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument("-c", "--config_path", help="Path to the TOML configuration file.", type=str, metavar='config',
+                        default=f"{os.path.join('config', 'demo_mode.toml')}")
+    args = parser.parse_args()
+
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    config = None
+    try:
+        with open(os.path.join(base_dir, args.config_path) if not os.path.isabs(args.config_path) else args.config_path,
+                  'r') as toml_config_file:
+            config = toml.load(toml_config_file)
+            print(
+                f"Configuration File Loaded - {os.path.join(base_dir, args.config_path)}")
+    except FileNotFoundError:
+        print(f"Error: File '{args.config_path}' not found.")
+    except toml.TomlDecodeError:
+        print(f"Error: File '{args.config_path}' is not a valid TOML file.")
+
+    out_file_path = config["basic"]["save_file_dir"]
+
+    get_evaluate_result(out_file_path)

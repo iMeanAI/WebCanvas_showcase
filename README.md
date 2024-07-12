@@ -266,8 +266,66 @@ Note: Some tasks may require manual updates to the task descriptions due to time
 
 We followed the 2-stage strategy of [MindAct](https://github.com/OSU-NLP-Group/Mind2Web) for a fair comparison. You can find the trained ranker model [DeBERTa-v3-base](https://huggingface.co/osunlp/MindAct_CandidateGeneration_deberta-v3-base) in the Huggingface Model Hub.
 
+## **Online Evaluation of Webcanvas Tasks**
+
+The "WebCanvas" task is a benchmark activity that focuses on evaluating the performance of online Web agents at key nodes when performing tasks. By accurately capturing the effects of the agent hitting these key points during the task execution, we can observe the agent's task execution status in real time. Next, I will step by step connect the evaluation data and framework to the current seeact framework
+
+### Download the WebCanvas dataset
+
+- WebCanvas project : https://github.com/iMeanAI/WebCanvas
+- WebCanvas dataset:  https://huggingface.co/datasets/iMeanAI/Mind2Web-Live
+- WebCanvas platform : https://www.imean.ai/web-canvas
+
+### **Data Fields**
+
+The data of each task includes an index, task description, reference task length and several key nodes.
+
+- "index" (str): unique id for each task
+- "task" (str): each task description
+- "reference_task_length" (int): the number of steps used to complete the task during the data annotation process
+- "evaluation" (list[dict]):  the key nodes that need to be hit to complete the task
+
+### Call the WebCanvas evaluation function
+
+The Webcanvas evaluation method is to calculate the number of key nodes hit by the agent at each time step in real time. It provides a function to implement this process.
+
+Parameter settings of the evaluate_with_webcanvas function:
+
+- “page”:  page created by playwright
+- "selector : playwright implements the locator of the positioning element, for example “<Locator frame=<Frame name= url=xxxx>> nth=x'>”
+- "target_value" (str): the target value or output value predicted by the agent
+- "evaluate_steps“:  the key node information that the agent has hit during the current execution process (intermediate state)
+- “reference_evaluate_steps”: key nodes to be evaluated in the WebCanvas data
+
+Evaluation result ：
+
+- "evaluate_steps“:  the key node information that the agent has hit during the current execution process (intermediate state)
+- “step_score(str)”：the key node score of the agent during the current execution process
+- “match_result(str)”:  key node that the agent has hit during the current execution process
+- “task_finished(bool)”: judge whether the agent hits all the key nodes to complete the task
+
+```python
+evaluate_steps, step_score, match_result, task_finished = await evaluate_with_webcanvas(page=session_control.active_page, selector=selector, target_value=target_value, evaluate_steps=evaluate_steps, reference_evaluate_steps=reference_evaluate_steps)
+```
+
+### Experiment start up
+
+To reproduce the online evaluation experiments of WebCanvas tasks ,run the following command to run SeeAct in demo mode:
+
+```python
+python src/seeact.py -c config/demo_mode.toml
+```
+
+### Evaluation results of all tasks
+
+We provide a python script to splice the results of all tasks, which can calculate the key node score, task completion rate, and other related indicators defined by WebCanvas .
+
+```python
+python src/experiment_results.py -c config/demo_mode.toml
+```
 
 ## Licensing Information
+
 The code under this repo is licensed under an [OPEN RAIL-S License](https://www.licenses.ai/ai-pubs-open-rails-vz1).
 
 The data under this repo is licensed under an [OPEN RAIL-D License](https://huggingface.co/blog/open_rail).
