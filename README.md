@@ -275,6 +275,7 @@ The "WebCanvas" task is a benchmark activity that focuses on evaluating the perf
 - WebCanvas project : https://github.com/iMeanAI/WebCanvas
 - WebCanvas dataset:  https://huggingface.co/datasets/iMeanAI/Mind2Web-Live
 - WebCanvas platform : https://www.imean.ai/web-canvas
+- WebCanvas paper: https://arxiv.org/abs/2406.12373
 
 ### **Data Fields**
 
